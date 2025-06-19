@@ -6,9 +6,10 @@ require 'mini_magick'
 module JekyllPig
     
     class SourceGallery
-        def initialize(path, name)
-            @path = path
-            @name = name
+        def initialize(options)
+            @path = options[:path]
+            @name = options[:name]
+            @create_html = options[:create_html] != false
         end
         def to_s
             "gallery #{@name} at #{@path}"
@@ -18,6 +19,9 @@ module JekyllPig
         end
         def name
             @name
+        end
+        def create_html
+            @create_html
         end
     end
 
@@ -200,13 +204,13 @@ module JekyllPig
                 config_galleries.each do |gallery|
                     full_path = File.join(@site.source, gallery['path'])
                     if File.directory?(full_path)
-                        galleries << SourceGallery.new(full_path, gallery['name'])
+                        galleries << SourceGallery.new({path:full_path, name:gallery['name'], create_html:gallery['create_html']})
                     end
                 end
             else
                 default_gallery_path = File.join(@site.source, 'gallery')
                 if File.directory?(default_gallery_path)
-                    galleries << SourceGallery.new(default_gallery_path, 'gallery')
+                    galleries << SourceGallery.new({path:default_gallery_path, name:'gallery', create_html: true})
                 end
             end
             galleries
@@ -247,7 +251,9 @@ module JekyllPig
                 
                 #make gallery specific html and image output paths
                 html_output_path = File.join(@html_path, gallery.name)
-                FileUtils.mkdir_p html_output_path unless File.exist? html_output_path
+                if gallery.create_html
+                  FileUtils.mkdir_p html_output_path unless File.exist? html_output_path
+                end
                 img_output_path = File.join(@img_path, gallery.name)
                 FileUtils.mkdir_p img_output_path unless File.exist? img_output_path
                 
@@ -271,10 +277,11 @@ module JekyllPig
                 
                 #create thumbs
                 process_images(image_data, gallery.name, gallery.path, images)
-                
                 images.each do |image_name|
-                    #create html assets for each image
-                    process_image(image_data, gallery.name, gallery.path, image_name)
+                    if gallery.create_html
+                        #create html assets for each image
+                        process_image(image_data, gallery.name, gallery.path, image_name)
+                    end
                 end
                 
                 if image_data != old_image_data
