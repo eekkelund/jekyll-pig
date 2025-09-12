@@ -43,22 +43,30 @@ module JekyllPig
         end
         
         def gallery_html(id, image_data)
-            "<div id='#{id}_pig'></div>\n"                                                                      \
-            "<script src='{{site.baseurl}}/assets/js/pig.min.js'></script>\n"                                   \
-            "<script>\n"                                                                                        \
-            "var #{id}_pig = new Pig(\n"                                                                        \
-            "    #{image_data.to_json()},\n"                                                                    \
-            "    {\n"                                                                                           \
-            "        containerId: '#{id}_pig',\n"                                                               \
-            "        classPrefix: '#{id}_pig',\n"                                                               \
-            "        urlForSize: function(filename, size) {\n"                                                  \
-            "            return '{{site.baseurl}}/assets/img/#{id}/' + size + '/' + filename;\n"                \
-            "        },\n"                                                                                      \
-            "        onClickHandler: function(filename) {\n"                                                    \
-            "            window.location.href = '{{site.baseurl}}/assets/html/#{id}/' + filename + '.html';\n"  \
-            "        }\n"                                                                                       \
-            "    }\n"                                                                                           \
-            ").enable();\n"                                                                                     \
+            "<div id='#{id}_pig'></div>\n"                                                                                                  \
+            "<script src='{{site.baseurl}}/assets/js/pig.min.js'></script>\n"                                                               \
+            "<script>\n"                                                                                                                    \
+            "class ProgressiveImageCustom extends ProgressiveImage {\n"                                                                     \
+            "    constructor(singleImageData, index, pig) {\n"                                                                              \
+            "        super(singleImageData, index, pig);\n"                                                                                 \
+            "        this.video = singleImageData.video;\n"                                                                                 \
+            "        this.classNames.video = pig.settings.classPrefix + '-video';\n"                                                        \
+            "    }\n"                                                                                                                       \
+            "}\n"                                                                                                                           \
+            "var #{id}_pig = new Pig(\n"                                                                                                    \
+            "    #{image_data.to_json()},\n"                                                                                                \
+            "    {\n"                                                                                                                       \
+            "        containerId: '#{id}_pig',\n"                                                                                           \
+            "        classPrefix: '#{id}_pig',\n"                                                                                           \
+            "        urlForSize: function(filename, size) {\n"                                                                              \
+            "            return '{{site.baseurl}}/assets/img/#{id}/' + size + '/' + filename;\n"                                            \
+            "        },\n"                                                                                                                  \
+            "        createProgressiveImage: (singleImageData, index, pig) => new ProgressiveImageCustom(singleImageData, index, pig),\n"   \
+            "        onClickHandler: function(filename) {\n"                                                                                \
+            "            window.location.href = '{{site.baseurl}}/assets/html/#{id}/' + filename + '.html';\n"                              \
+            "        }\n"                                                                                                                   \
+            "    }\n"                                                                                                                       \
+            ").enable();\n"                                                                                                                 \
             "</script>"
         end
         
@@ -82,6 +90,11 @@ module JekyllPig
         #get a list of image file names from a given path
         def get_images(path)
             patterns = ['*.jpg', '*.jpeg', '*.png'].map { |ext| File.join(path, ext) }
+            Dir.glob(patterns).map { |filepath| File.basename(filepath) }
+        end
+        
+        def get_videos(path)
+            patterns = ['*.mp4', '*.mov', '*.mpg'].map { |ext| File.join(path, ext) }
             Dir.glob(patterns).map { |filepath| File.basename(filepath) }
         end
         
@@ -158,7 +171,7 @@ module JekyllPig
                 
                 #do the processing in a batch
                 mog = MiniMagick::Tool::Mogrify.new
-                mog.resize("x#{size}")
+                mog.resize("x#{size}>")
                 mog.sampling_factor('4:2:0')
                 mog.colorspace('sRGB')
                 mog.interlace('Plane')
@@ -169,6 +182,22 @@ module JekyllPig
                 todo_images.each { |todo| mog << File.join(source_path, todo) }
                 mog.call
             }
+        end
+        
+        def process_videos(gallery, videos)
+            video_out_path = File.join(@img_path, gallery.name, "video")
+            FileUtils.mkdir_p video_out_path unless File.exist? video_out_path
+            
+            done_videos = get_videos(video_out_path)
+            todo_videos = videos - done_videos
+            
+            todo_videos.each { |todo| FileUtils.cp(File.join(gallery.path, todo),video_out_path) }
+            
+            mog = MiniMagick::Tool::Mogrify.new
+            mog.format('jpg')
+            #take a screenshot of first frame
+            todo_videos.each { |todo| mog << File.join(gallery.path, todo) + "[0]" }
+            mog.call
         end
         
         #create full size html page for a given image
@@ -225,10 +254,12 @@ module JekyllPig
             FileUtils.mkdir_p @data_path unless File.exist? @data_path
         end
         
-        def augment_image_data(gallery, image_data, images) 
+        def augment_image_data(gallery, image_data, images, videos) 
             images.each do |image_name|
                 #append data to image_data array if it's not already there
                 if not image_data.any? { |data| data['filename'] == image_name }
+                    basename = File.basename(image_name, File.extname(image_name))
+                    video = videos.grep(/(#{basename})\.(mpg|mov|mp4)/).first
                     #get image date
                     image_date = get_image_date(gallery.path, image_name)
                     image = get_image(gallery.path, image_name)
@@ -236,7 +267,8 @@ module JekyllPig
                         {
                         'datetime' => image_date.to_s,
                         'filename' => image_name,
-                        'aspectRatio' => image.width.to_f / image.height
+                        'aspectRatio' => image.width.to_f / image.height,
+                        'video' => video
                         }
                 end
             end
@@ -261,6 +293,9 @@ module JekyllPig
                 if not File.exist? File.join(@js_path, 'pig.min.js')
                     File.open(File.join(@js_path, 'pig.min.js'), 'w') { |file| file.write(@@pig_min_js) }
                 end
+                #first get screenshot from video
+                videos = get_videos(gallery.path)
+                process_videos(gallery, videos)
                 
                 #get image data from _data
                 image_data = get_image_data(gallery.name)
@@ -270,7 +305,7 @@ module JekyllPig
                 images = get_images(gallery.path)
                 
                 #add any additional images to image_data
-                augment_image_data(gallery, image_data, images)
+                augment_image_data(gallery, image_data, images, videos)
                 
                 #sort image data
                 image_data = image_data.sort_by { |data| data['datetime'] }
