@@ -1,4 +1,3 @@
-
 require 'fileutils'
 require 'json'
 require 'mini_magick'
@@ -46,13 +45,6 @@ module JekyllPig
             "<div id='#{id}_pig'></div>\n"                                                                                                  \
             "<script src='{{site.baseurl}}/assets/js/pig.min.js'></script>\n"                                                               \
             "<script>\n"                                                                                                                    \
-            "class ProgressiveImageCustom extends ProgressiveImage {\n"                                                                     \
-            "    constructor(singleImageData, index, pig) {\n"                                                                              \
-            "        super(singleImageData, index, pig);\n"                                                                                 \
-            "        this.video = singleImageData.video;\n"                                                                                 \
-            "        this.classNames.video = pig.settings.classPrefix + '-video';\n"                                                        \
-            "    }\n"                                                                                                                       \
-            "}\n"                                                                                                                           \
             "var #{id}_pig = new Pig(\n"                                                                                                    \
             "    #{image_data.to_json()},\n"                                                                                                \
             "    {\n"                                                                                                                       \
@@ -61,7 +53,16 @@ module JekyllPig
             "        urlForSize: function(filename, size) {\n"                                                                              \
             "            return '{{site.baseurl}}/assets/img/#{id}/' + size + '/' + filename;\n"                                            \
             "        },\n"                                                                                                                  \
-            "        createProgressiveImage: (singleImageData, index, pig) => new ProgressiveImageCustom(singleImageData, index, pig),\n"   \
+            "        createProgressiveImage: function(singleImageData, index, pig) {\n"                                                     \
+            "            class ProgressiveImageCustom extends ProgressiveImage {\n"                                                         \
+            "                constructor(singleImageData, index, pig) {\n"                                                                  \
+            "                    super(singleImageData, index, pig);\n"                                                                     \
+            "                    this.video = singleImageData.video;\n"                                                                     \
+            "                    this.classNames.video = pig.settings.classPrefix + '-video';\n"                                            \
+            "                 }\n"                                                                                                          \
+            "             }\n"                                                                                                              \
+            "             return new ProgressiveImageCustom(singleImageData, index, pig);\n"                                                \
+            "         },\n"                                                                                                                 \
             "        onClickHandler: function(filename) {\n"                                                                                \
             "            window.location.href = '{{site.baseurl}}/assets/html/#{id}/' + filename + '.html';\n"                              \
             "        }\n"                                                                                                                   \
